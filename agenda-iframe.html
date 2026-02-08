@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<title>Agenda Bram & Thirza - iframe versie</title>
+
+<style>
+body { font-family: Arial, sans-serif; margin:0; padding:10px; }
+.container { display:flex; flex-wrap:wrap; gap:16px; }
+.kolom { flex:1; min-width:320px; background:#fafafa; padding:12px; border-radius:6px; }
+.event { border-bottom:1px solid #ddd; padding:6px 0; }
+.date { font-weight:bold; color:#1565c0; }
+.vak { color:#444; font-size:13px; }
+.dag { margin-top:10px; font-size:16px; font-weight:bold; border-bottom:2px solid #1565c0; }
+</style>
+
+</head>
+<body>
+
+<div class="container">
+
+  <div class="kolom">
+    <h3>Bram</h3>
+    <div id="bram">Agenda laden...</div>
+  </div>
+
+  <div class="kolom">
+    <h3>Thirza</h3>
+    <div id="thirza">Agenda laden...</div>
+  </div>
+
+</div>
+
+<script>
+function proxy(url){
+  return "https://api.allorigins.win/raw?url=" + encodeURIComponent(url);
+}
+
+const bramUrl = proxy("https://calendar.magister.net/api/icalendar/feeds/b8b8a80e-8145-4127-a127-bc899f5a0f90");
+const thirzaUrl = proxy("https://calendar.magister.net/api/icalendar/feeds/2d18ef0c-8dd9-4559-a257-c826afe9adac");
+
+function parseDate(ics){
+  let d = ics.replace("T","").replace("Z","");
+  return new Date(
+    d.substring(0,4), d.substring(4,6)-1, d.substring(6,8),
+    d.substring(8,10)||0, d.substring(10,12)||0
+  );
+}
+
+function dagLabel(d){
+  return d.toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long'});
+}
+
+async function laadAgenda(url,id){
+  try{
+    let r = await fetch(url);
+    let data = await r.text();
+
+    let lines = data.split(/\r?\n/);
+    let events = [];
+    let current = null;
+
+    lines.forEach(line=>{
+      if(line.startsWith("BEGIN:VEVENT")) current={};
+      else if(line.startsWith("END:VEVENT")){ events.push(current); current=null; }
+      else if(current){
+        let p=line.split(/:(.+)/);
+        if(p[0]&&p[1]) current[p[0]]=p[1];
+      }
+    });
+
+    let nu = new Date();
+    events = events.filter(e=>e.DTSTART && parseDate(e.DTSTART)>=nu);
+    events.sort((a,b)=>a.DTSTART.localeCompare(b.DTSTART));
+
+    let html="";
+    let laatsteDag="";
+
+    events.forEach(e=>{
+      let s=parseDate(e.DTSTART);
+      let e2=parseDate(e.DTEND);
+
+      let dag = dagLabel(s);
+      if(dag!==laatsteDag){
+        html+=`<div class="dag">${dag}</div>`;
+        laatsteDag=dag;
+      }
+
+      html+=`
+      <div class="event">
+        <div class="date">
+          ${s.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+          -
+          ${e2.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+        </div>
+        <div>${e.SUMMARY||""}</div>
+        <div class="vak">${e.LOCATION||""}</div>
+      </div>`;
+    });
+
+    document.getElementById(id).innerHTML = html || "Geen komende afspraken";
+
+  }catch(err){
+    document.getElementById(id).innerText = "Kan agenda niet laden: " + err;
+  }
+}
+
+function start(){
+  laadAgenda(bramUrl,"bram");
+  laadAgenda(thirzaUrl,"thirza");
+}
+
+start();
+setInterval(start,5*60*1000);
+</script>
+
+</body>
+</html>
